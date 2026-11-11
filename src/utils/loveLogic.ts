@@ -28,16 +28,16 @@ export interface AnimatedRoseItem {
   vowText: string;
 }
 
-export const AUDIO_SRC = 'assets/aistudio/WhatsApp_Audio_2026-11-11_at_12.25.10_AM_0fb249b7.mpeg';
+export const AUDIO_SRC = './assets/aistudio/WhatsApp_Audio_2026-11-11_at_12.25.10_AM_0fb249b7.mpeg';
 
 export const VISUAL_ASSETS = {
-  FIANCEE_PHOTO: 'assets/aistudio/WhatsApp_Image_2026-11-11_at_2.30.51_AM-Photoroom_b5aa24a6.png',
-  REAL_ROSES_ARCH: 'assets/images/real_dark_velvet_roses_arch_1794358326947.jpg',
-  HERO_ROSES: 'assets/images/hero_dark_red_roses_1794354113350.jpg',
-  BOUQUET_RED: 'assets/images/bouquet_red_roses_1794354115003.jpg',
-  BOUQUET_PINK: 'assets/images/bouquet_pink_blush_1794354115179.jpg',
-  BOUQUET_WHITE: 'assets/images/bouquet_white_ivory_1794354117123.jpg',
-  SATIN_BOW: 'assets/images/crimson_satin_bow_1794354116842.jpg',
+  FIANCEE_PHOTO: './assets/aistudio/WhatsApp_Image_2026-11-11_at_2.30.51_AM-Photoroom_b5aa24a6.png',
+  REAL_ROSES_ARCH: new URL('../assets/images/real_dark_velvet_roses_arch_1794358326947.jpg', import.meta.url).href,
+  HERO_ROSES: new URL('../assets/images/hero_dark_red_roses_1794354113350.jpg', import.meta.url).href,
+  BOUQUET_RED: new URL('../assets/images/bouquet_red_roses_1794354115003.jpg', import.meta.url).href,
+  BOUQUET_PINK: new URL('../assets/images/bouquet_pink_blush_1794354115179.jpg', import.meta.url).href,
+  BOUQUET_WHITE: new URL('../assets/images/bouquet_white_ivory_1794354117123.jpg', import.meta.url).href,
+  SATIN_BOW: new URL('../assets/images/crimson_satin_bow_1794354116842.jpg', import.meta.url).href,
 };
 
 export const BOUQUET_OPTIONS: BouquetOption[] = [
