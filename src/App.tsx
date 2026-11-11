@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Play, Pause, Heart, Sparkles, Flower2, Music, Gift, ArrowRight } from 'lucide-react';
 import {
   AUDIO_SRC,
+  AUDIO_FALLBACK_SRC,
   VISUAL_ASSETS,
   BOUQUET_OPTIONS,
   BouquetOption,
@@ -18,54 +19,112 @@ export default function App() {
   const [ribbonUntied, setRibbonUntied] = useState<boolean>(false);
 
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const audioBlobUrlRef = useRef<string | null>(null);
   const hasAutoStartedRef = useRef<boolean>(false);
+  const lastAutoStartTimestampRef = useRef<number>(0);
 
-  const tryPlayAudio = useCallback(async () => {
+  // Preload audio as an explicit audio/mpeg Blob URL in a ref (without resetting <audio src>) as a fallback for mobile Safari/Chrome
+  useEffect(() => {
+    let revokedUrl: string | null = null;
+    let cancelled = false;
+
+    const loadAudioBlob = async () => {
+      for (const candidateUrl of [AUDIO_SRC, AUDIO_FALLBACK_SRC]) {
+        try {
+          const response = await fetch(candidateUrl);
+          if (!response.ok) continue;
+          const buffer = await response.arrayBuffer();
+          if (cancelled || buffer.byteLength < 1000) continue;
+          const blob = new Blob([buffer], { type: 'audio/mpeg' });
+          revokedUrl = URL.createObjectURL(blob);
+          audioBlobUrlRef.current = revokedUrl;
+          break;
+        } catch {
+          // Try next candidate
+        }
+      }
+    };
+
+    loadAudioBlob();
+
+    return () => {
+      cancelled = true;
+      if (revokedUrl) {
+        URL.revokeObjectURL(revokedUrl);
+      }
+    };
+  }, []);
+
+  const playAudioSafely = useCallback(async () => {
     const audio = audioRef.current;
-    if (!audio) return;
+    if (!audio) return false;
+    audio.loop = true;
+    audio.muted = false;
     try {
-      audio.loop = true;
       await audio.play();
       setIsPlaying(true);
       hasAutoStartedRef.current = true;
+      lastAutoStartTimestampRef.current = Date.now();
+      return true;
     } catch {
-      // Browser blocked unmuted autoplay before first gesture; handled by gesture listener
+      // If mobile browser rejected the direct URL, switch once to the audio/mpeg Blob URL and retry inside the user gesture
+      if (audioBlobUrlRef.current && audio.src !== audioBlobUrlRef.current) {
+        try {
+          audio.src = audioBlobUrlRef.current;
+          audio.load();
+          await audio.play();
+          setIsPlaying(true);
+          hasAutoStartedRef.current = true;
+          lastAutoStartTimestampRef.current = Date.now();
+          return true;
+        } catch {
+          return false;
+        }
+      }
+      return false;
     }
   }, []);
 
   useEffect(() => {
-    tryPlayAudio();
+    playAudioSafely();
 
-    const handleFirstInteraction = () => {
-      if (!hasAutoStartedRef.current && audioRef.current && audioRef.current.paused) {
-        audioRef.current
-          .play()
-          .then(() => {
-            setIsPlaying(true);
-            hasAutoStartedRef.current = true;
-          })
-          .catch(() => {});
+    const handleFirstInteraction = (e: Event) => {
+      const target = e.target as HTMLElement | null;
+      if (target && target.closest('[data-song-toggle="true"]')) {
+        return;
+      }
+
+      const audio = audioRef.current;
+      if (!hasAutoStartedRef.current && audio && audio.paused) {
+        playAudioSafely();
       }
     };
 
-    window.addEventListener('pointerdown', handleFirstInteraction, { once: true });
-    window.addEventListener('keydown', handleFirstInteraction, { once: true });
+    window.addEventListener('touchend', handleFirstInteraction, { passive: true });
+    window.addEventListener('click', handleFirstInteraction, { passive: true });
+    window.addEventListener('keydown', handleFirstInteraction);
 
     return () => {
-      window.removeEventListener('pointerdown', handleFirstInteraction);
+      window.removeEventListener('touchend', handleFirstInteraction);
+      window.removeEventListener('click', handleFirstInteraction);
       window.removeEventListener('keydown', handleFirstInteraction);
     };
-  }, [tryPlayAudio]);
+  }, [playAudioSafely]);
 
   const handleTogglePlay = async () => {
     const audio = audioRef.current;
     if (!audio) return;
     hasAutoStartedRef.current = true;
+
+    // Prevent accidental immediate pause if auto-unlock just started the song moments ago
+    if (!audio.paused && Date.now() - lastAutoStartTimestampRef.current < 450) {
+      setIsPlaying(true);
+      return;
+    }
+
     if (audio.paused) {
-      try {
-        await audio.play();
-        setIsPlaying(true);
-      } catch {
+      const started = await playAudioSafely();
+      if (!started) {
         setIsPlaying(false);
       }
     } else {
@@ -83,12 +142,13 @@ export default function App() {
       {/* Slow, Gentle Falling Velvet Rose Petals Canvas */}
       <FallingPetalsCanvas burstKey={petalBurstKey} />
 
-      {/* Persistent Audio Element with AutoPlay & Loop */}
+      {/* Persistent Audio Element with AutoPlay, PlaysInline & Loop */}
       <audio
         ref={audioRef}
         src={AUDIO_SRC}
         autoPlay
         loop
+        playsInline
         preload="auto"
         onPlay={() => setIsPlaying(true)}
         onPause={() => setIsPlaying(false)}
@@ -167,6 +227,7 @@ export default function App() {
             <div className="flex items-center shrink-0">
               <button
                 type="button"
+                data-song-toggle="true"
                 onClick={() => {
                   handleTogglePlay();
                   triggerPetalShower();
@@ -227,7 +288,7 @@ export default function App() {
                 onClick={() => {
                   triggerPetalShower();
                   if (audioRef.current && audioRef.current.paused) {
-                    handleTogglePlay();
+                    playAudioSafely();
                   }
                 }}
                 className="min-h-[42px] px-7 py-2.5 rounded-full bg-[#C89486] hover:bg-[#D59B8D] text-[#1D0306] text-[10px] sm:text-[11px] font-medium tracking-[0.16em] uppercase transition-transform active:scale-95 flex items-center gap-4 whitespace-nowrap shrink-0 shadow-xl"
@@ -303,7 +364,7 @@ export default function App() {
                 setRibbonUntied((prev) => !prev);
                 triggerPetalShower();
                 if (audioRef.current && audioRef.current.paused) {
-                  handleTogglePlay();
+                  playAudioSafely();
                 }
               }}
               aria-label="Untie the 11/11 crimson satin Valentine ribbon"
@@ -350,14 +411,24 @@ export default function App() {
           <Flower2 className="w-3.5 h-3.5 text-[#D59B8D]" />
           <span className="text-[9px] tracking-wider uppercase mt-0.5">Her Roses</span>
         </a>
-        <a
-          href="#petals"
-          onClick={triggerPetalShower}
-          className="min-h-[44px] flex flex-col items-center justify-center text-[#D59B8D] hover:text-[#EFE0DA] transition-colors"
+        <button
+          type="button"
+          data-song-toggle="true"
+          onClick={() => {
+            handleTogglePlay();
+            triggerPetalShower();
+          }}
+          className="min-h-[44px] flex flex-col items-center justify-center text-[#D59B8D] hover:text-[#EFE0DA] transition-colors cursor-pointer"
         >
-          <Music className="w-3.5 h-3.5 text-[#D59B8D]" />
-          <span className="text-[9px] tracking-wider uppercase mt-0.5">Our Song</span>
-        </a>
+          {isPlaying ? (
+            <Pause className="w-3.5 h-3.5 text-[#EFE0DA]" />
+          ) : (
+            <Music className="w-3.5 h-3.5 text-[#D59B8D]" />
+          )}
+          <span className="text-[9px] tracking-wider uppercase mt-0.5">
+            {isPlaying ? 'Pause Song' : 'Our Song'}
+          </span>
+        </button>
         <a
           href="#story"
           onClick={triggerPetalShower}

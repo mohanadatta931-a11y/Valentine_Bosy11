@@ -6,7 +6,7 @@
   "homepage": "https://mohanadatta931-a11y.github.io/Valentine_Bosy/",
   "scripts": {
     "dev": "vite --port=3000 --host=0.0.0.0",
-    "build": "vite build",
+    "build": "cp public/assets/aistudio/WhatsApp_Audio_2026-11-11_at_12.25.10_AM_0fb249b7.mpeg public/assets/aistudio/valentine_song.mp3 && vite build",
     "predeploy": "npm run build",
     "deploy": "gh-pages -d dist --repo https://github.com/mohanadatta931-a11y/Valentine_Bosy.git",
     "preview": "vite preview",
