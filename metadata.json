@@ -1,0 +1,6 @@
+{
+  "name": "11:11 — إهداء لخطيبتي في يوم الحب",
+  "description": "موقع هادئ وأنيق لتهنئة خطيبتي بيوم الحب 11/11 مع أغنيتنا المفضلة وكلمات واقعية من القلب.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

@@ -1,0 +1,130 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Plus Jakarta Sans", system-ui, -apple-system, sans-serif;
+  --font-serif: "Cormorant Garamond", Georgia, serif;
+  --font-didone: "Bodoni Moda", "Cormorant Garamond", Georgia, serif;
+  --font-script: "Pinyon Script", "Great Vibes", cursive, serif;
+  --font-mono: "IBM Plex Mono", monospace;
+}
+
+@layer base {
+  html {
+    font-family: var(--font-sans);
+    scroll-behavior: smooth;
+    background-color: #140204;
+    color: #EFE0DA;
+  }
+
+  .font-editorial {
+    font-family: var(--font-serif);
+  }
+
+  .font-didone {
+    font-family: var(--font-didone);
+  }
+
+  .font-script {
+    font-family: var(--font-script);
+  }
+}
+
+@keyframes spinSlow {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes floatGentle {
+  0%, 100% {
+    transform: translateY(0px) rotate(0deg);
+  }
+  50% {
+    transform: translateY(-8px) rotate(1.5deg);
+  }
+}
+
+@keyframes pulseGlow {
+  0%, 100% {
+    opacity: 0.45;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.85;
+    transform: scale(1.06);
+  }
+}
+
+.animate-vinyl {
+  animation: spinSlow 14s linear infinite;
+}
+
+.animate-vinyl-paused {
+  animation: spinSlow 14s linear infinite;
+  animation-play-state: paused;
+}
+
+.animate-float-gentle {
+  animation: floatGentle 5s ease-in-out infinite;
+}
+
+.animate-pulse-glow {
+  animation: pulseGlow 4s ease-in-out infinite;
+}
+
+@keyframes bouquetShimmerGlow {
+  0%, 100% {
+    filter: brightness(1.04) saturate(1.06) drop-shadow(0 0 12px rgba(213, 155, 141, 0.32)) drop-shadow(0 0 24px rgba(168, 19, 35, 0.26));
+  }
+  50% {
+    filter: brightness(1.15) saturate(1.16) drop-shadow(0 0 20px rgba(247, 234, 230, 0.5)) drop-shadow(0 0 36px rgba(213, 155, 141, 0.42));
+  }
+}
+
+.bouquet-canvas-shimmer {
+  transition: filter 0.4s ease, transform 0.4s ease, opacity 0.3s ease;
+}
+
+.group:hover .bouquet-canvas-shimmer,
+.bouquet-canvas-shimmer:hover {
+  animation: bouquetShimmerGlow 2.2s ease-in-out infinite;
+}
+
+@keyframes portraitEntrance {
+  0% {
+    opacity: 0;
+    transform: scale(0.92) translateY(14px);
+    filter: brightness(0.85);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+    filter: brightness(1);
+  }
+}
+
+.animate-portrait-entrance {
+  animation: portraitEntrance 1.35s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-vinyl,
+  .animate-float-gentle,
+  .animate-pulse-glow,
+  .animate-portrait-entrance,
+  .group:hover .bouquet-canvas-shimmer,
+  .bouquet-canvas-shimmer:hover {
+    animation: none !important;
+  }
+}
