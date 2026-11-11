@@ -20,36 +20,116 @@ export default function App() {
   const [needsMobileTap, setNeedsMobileTap] = useState<boolean>(false);
 
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const audioCtxRef = useRef<AudioContext | null>(null);
+  const prebufferedBlobUrlRef = useRef<string | null>(null);
   const hasStartedFromZeroRef = useRef<boolean>(false);
   const lastStartTimestampRef = useRef<number>(0);
 
-  const startSongFromBeginningOrResume = useCallback(async (forceFromStart = false) => {
-    const audio = audioRef.current;
-    if (!audio) return false;
-    audio.loop = true;
-    audio.muted = false;
-    audio.volume = 1;
+  // Pre-buffer the entire MP3 into memory on mount so mobile networks never stall on the first 0.5s
+  useEffect(() => {
+    let revokedUrl: string | null = null;
+    let cancelled = false;
 
-    // On the very first audible start (or if forced), always rewind to 0.00s so the first two words are NEVER cut off
-    if (!hasStartedFromZeroRef.current || forceFromStart) {
-      try {
-        audio.currentTime = 0;
-      } catch {
-        // Ignore if metadata not yet loaded
+    const preloadSongIntoMemory = async () => {
+      for (const url of [AUDIO_SRC, AUDIO_FALLBACK_SRC]) {
+        try {
+          const res = await fetch(url);
+          if (!res.ok) continue;
+          const buf = await res.arrayBuffer();
+          if (cancelled || buf.byteLength < 1000) continue;
+          const blob = new Blob([buf], { type: 'audio/mpeg' });
+          revokedUrl = URL.createObjectURL(blob);
+          prebufferedBlobUrlRef.current = revokedUrl;
+          // If audio hasn't started yet, point it to the in-memory pre-buffered Blob URL
+          if (audioRef.current && audioRef.current.paused && !hasStartedFromZeroRef.current) {
+            audioRef.current.src = revokedUrl;
+            audioRef.current.load();
+          }
+          break;
+        } catch {
+          // Try next candidate
+        }
       }
-    }
+    };
 
+    preloadSongIntoMemory();
+
+    return () => {
+      cancelled = true;
+      if (revokedUrl) {
+        URL.revokeObjectURL(revokedUrl);
+      }
+    };
+  }, []);
+
+  // Prime mobile AudioContext with a 0.5s silent buffer so phone speaker/Bluetooth hardware wakes up cleanly
+  const primeAudioContextHardware = useCallback(async () => {
     try {
-      await audio.play();
-      hasStartedFromZeroRef.current = true;
-      lastStartTimestampRef.current = Date.now();
-      setIsPlaying(true);
-      setNeedsMobileTap(false);
-      return true;
+      const AudioContextClass =
+        window.AudioContext || (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+      if (!AudioContextClass) return;
+
+      if (!audioCtxRef.current) {
+        audioCtxRef.current = new AudioContextClass();
+      }
+      const ctx = audioCtxRef.current;
+      if (ctx.state === 'suspended') {
+        await ctx.resume();
+      }
+
+      // Play a 0.5s silent warm-up buffer through the AudioContext to wake mobile audio hardware
+      const silentBuffer = ctx.createBuffer(1, Math.max(1, Math.floor(ctx.sampleRate * 0.5)), ctx.sampleRate);
+      const source = ctx.createBufferSource();
+      source.buffer = silentBuffer;
+      source.connect(ctx.destination);
+      source.start(0);
     } catch {
-      return false;
+      // Ignore if AudioContext is restricted
     }
   }, []);
+
+  const startSongFromBeginningOrResume = useCallback(
+    async (forceFromStart = false) => {
+      const audio = audioRef.current;
+      if (!audio) return false;
+
+      // Wake up mobile AudioContext hardware pipeline first
+      await primeAudioContextHardware();
+
+      audio.loop = true;
+      audio.muted = false;
+      audio.volume = 1;
+
+      const isFirstStart = !hasStartedFromZeroRef.current || forceFromStart;
+      if (isFirstStart) {
+        try {
+          audio.currentTime = 0;
+        } catch {
+          // Ignore if metadata not yet loaded
+        }
+      }
+
+      try {
+        await audio.play();
+        // Ensure mobile decoder didn't jump ahead during initial play unlock
+        if (isFirstStart && audio.currentTime > 0.35) {
+          try {
+            audio.currentTime = 0;
+          } catch {
+            // Ignore
+          }
+        }
+        hasStartedFromZeroRef.current = true;
+        lastStartTimestampRef.current = Date.now();
+        setIsPlaying(true);
+        setNeedsMobileTap(false);
+        return true;
+      } catch {
+        return false;
+      }
+    },
+    [primeAudioContextHardware]
+  );
 
   useEffect(() => {
     let mounted = true;
