@@ -93,8 +93,8 @@ export default function App() {
       const audio = audioRef.current;
       if (!audio) return false;
 
-      // Wake up mobile AudioContext hardware pipeline first
-      await primeAudioContextHardware();
+      // Wake up mobile AudioContext hardware pipeline without breaking synchronous user-gesture activation
+      void primeAudioContextHardware();
 
       audio.loop = true;
       audio.muted = false;
@@ -110,9 +110,13 @@ export default function App() {
       }
 
       try {
-        await audio.play();
-        // Ensure mobile decoder didn't jump ahead during initial play unlock
-        if (isFirstStart && audio.currentTime > 0.35) {
+        const playPromise = audio.play();
+        if (playPromise !== undefined) {
+          await playPromise;
+        }
+        // Force an unconditional currentTime = 0 reset immediately after the first successful play Promise resolves
+        // so the mobile browser's audio decoder never skips ahead while waiting for user interaction
+        if (isFirstStart) {
           try {
             audio.currentTime = 0;
           } catch {
