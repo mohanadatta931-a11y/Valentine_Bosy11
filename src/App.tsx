@@ -17,116 +17,92 @@ export default function App() {
   const [isPlaying, setIsPlaying] = useState<boolean>(false);
   const [petalBurstKey, setPetalBurstKey] = useState<number>(0);
   const [ribbonUntied, setRibbonUntied] = useState<boolean>(false);
+  const [needsMobileTap, setNeedsMobileTap] = useState<boolean>(false);
 
   const audioRef = useRef<HTMLAudioElement | null>(null);
-  const audioBlobUrlRef = useRef<string | null>(null);
-  const hasAutoStartedRef = useRef<boolean>(false);
-  const lastAutoStartTimestampRef = useRef<number>(0);
+  const hasStartedFromZeroRef = useRef<boolean>(false);
+  const lastStartTimestampRef = useRef<number>(0);
 
-  // Preload audio as an explicit audio/mpeg Blob URL in a ref (without resetting <audio src>) as a fallback for mobile Safari/Chrome
-  useEffect(() => {
-    let revokedUrl: string | null = null;
-    let cancelled = false;
-
-    const loadAudioBlob = async () => {
-      for (const candidateUrl of [AUDIO_SRC, AUDIO_FALLBACK_SRC]) {
-        try {
-          const response = await fetch(candidateUrl);
-          if (!response.ok) continue;
-          const buffer = await response.arrayBuffer();
-          if (cancelled || buffer.byteLength < 1000) continue;
-          const blob = new Blob([buffer], { type: 'audio/mpeg' });
-          revokedUrl = URL.createObjectURL(blob);
-          audioBlobUrlRef.current = revokedUrl;
-          break;
-        } catch {
-          // Try next candidate
-        }
-      }
-    };
-
-    loadAudioBlob();
-
-    return () => {
-      cancelled = true;
-      if (revokedUrl) {
-        URL.revokeObjectURL(revokedUrl);
-      }
-    };
-  }, []);
-
-  const playAudioSafely = useCallback(async () => {
+  const startSongFromBeginningOrResume = useCallback(async (forceFromStart = false) => {
     const audio = audioRef.current;
     if (!audio) return false;
     audio.loop = true;
     audio.muted = false;
+    audio.volume = 1;
+
+    // On the very first audible start (or if forced), always rewind to 0.00s so the first two words are NEVER cut off
+    if (!hasStartedFromZeroRef.current || forceFromStart) {
+      try {
+        audio.currentTime = 0;
+      } catch {
+        // Ignore if metadata not yet loaded
+      }
+    }
+
     try {
       await audio.play();
+      hasStartedFromZeroRef.current = true;
+      lastStartTimestampRef.current = Date.now();
       setIsPlaying(true);
-      hasAutoStartedRef.current = true;
-      lastAutoStartTimestampRef.current = Date.now();
+      setNeedsMobileTap(false);
       return true;
     } catch {
-      // If mobile browser rejected the direct URL, switch once to the audio/mpeg Blob URL and retry inside the user gesture
-      if (audioBlobUrlRef.current && audio.src !== audioBlobUrlRef.current) {
-        try {
-          audio.src = audioBlobUrlRef.current;
-          audio.load();
-          await audio.play();
-          setIsPlaying(true);
-          hasAutoStartedRef.current = true;
-          lastAutoStartTimestampRef.current = Date.now();
-          return true;
-        } catch {
-          return false;
-        }
-      }
       return false;
     }
   }, []);
 
   useEffect(() => {
-    playAudioSafely();
+    let mounted = true;
 
-    const handleFirstInteraction = (e: Event) => {
+    // Attempt immediate autoplay on page load
+    startSongFromBeginningOrResume(true).then((started) => {
+      if (mounted && !started) {
+        // Mobile browser blocked unmuted autoplay before first touch — show 1-tap instant entrance veil
+        setNeedsMobileTap(true);
+      }
+    });
+
+    const handleInstantUnlock = (e: Event) => {
       const target = e.target as HTMLElement | null;
       if (target && target.closest('[data-song-toggle="true"]')) {
         return;
       }
 
-      const audio = audioRef.current;
-      if (!hasAutoStartedRef.current && audio && audio.paused) {
-        playAudioSafely();
+      if (!hasStartedFromZeroRef.current) {
+        startSongFromBeginningOrResume(true);
       }
     };
 
-    window.addEventListener('touchend', handleFirstInteraction, { passive: true });
-    window.addEventListener('click', handleFirstInteraction, { passive: true });
-    window.addEventListener('keydown', handleFirstInteraction);
+    // Listen in capture phase on every touch/pointer/click event so the first touch anywhere starts the song at 0.00s
+    window.addEventListener('touchstart', handleInstantUnlock, { capture: true, passive: true });
+    window.addEventListener('pointerdown', handleInstantUnlock, { capture: true, passive: true });
+    window.addEventListener('touchend', handleInstantUnlock, { capture: true, passive: true });
+    window.addEventListener('click', handleInstantUnlock, { capture: true, passive: true });
+    window.addEventListener('keydown', handleInstantUnlock, { capture: true });
 
     return () => {
-      window.removeEventListener('touchend', handleFirstInteraction);
-      window.removeEventListener('click', handleFirstInteraction);
-      window.removeEventListener('keydown', handleFirstInteraction);
+      mounted = false;
+      window.removeEventListener('touchstart', handleInstantUnlock, { capture: true });
+      window.removeEventListener('pointerdown', handleInstantUnlock, { capture: true });
+      window.removeEventListener('touchend', handleInstantUnlock, { capture: true });
+      window.removeEventListener('click', handleInstantUnlock, { capture: true });
+      window.removeEventListener('keydown', handleInstantUnlock, { capture: true });
     };
-  }, [playAudioSafely]);
+  }, [startSongFromBeginningOrResume]);
 
   const handleTogglePlay = async () => {
     const audio = audioRef.current;
     if (!audio) return;
-    hasAutoStartedRef.current = true;
 
-    // Prevent accidental immediate pause if auto-unlock just started the song moments ago
-    if (!audio.paused && Date.now() - lastAutoStartTimestampRef.current < 450) {
+    // Prevent accidental immediate pause if touchstart just unlocked the song moments ago
+    if (!audio.paused && Date.now() - lastStartTimestampRef.current < 600) {
       setIsPlaying(true);
+      setNeedsMobileTap(false);
       return;
     }
 
     if (audio.paused) {
-      const started = await playAudioSafely();
-      if (!started) {
-        setIsPlaying(false);
-      }
+      await startSongFromBeginningOrResume(!hasStartedFromZeroRef.current);
     } else {
       audio.pause();
       setIsPlaying(false);
@@ -142,21 +118,63 @@ export default function App() {
       {/* Slow, Gentle Falling Velvet Rose Petals Canvas */}
       <FallingPetalsCanvas burstKey={petalBurstKey} />
 
-      {/* Persistent Audio Element with AutoPlay, PlaysInline & Loop */}
+      {/* Instant 1-Tap Romantic Welcome Veil when Mobile Browser Requires a Touch to Start Audio */}
+      {needsMobileTap && !isPlaying && (
+        <div
+          role="button"
+          tabIndex={0}
+          aria-label="Tap anywhere to open your Valentine and start our song"
+          onTouchStart={() => {
+            startSongFromBeginningOrResume(true);
+            triggerPetalShower();
+          }}
+          onPointerDown={() => {
+            startSongFromBeginningOrResume(true);
+            triggerPetalShower();
+          }}
+          onClick={() => {
+            startSongFromBeginningOrResume(true);
+            triggerPetalShower();
+          }}
+          className="fixed inset-0 z-50 bg-[#120103]/85 backdrop-blur-md flex flex-col items-center justify-center px-6 text-center cursor-pointer select-none animate-fade-in"
+        >
+          <div className="max-w-xs w-full p-7 rounded-3xl bg-[#1B0306]/90 border border-[#D59B8D]/35 shadow-[0_0_80px_rgba(168,19,35,0.55)] flex flex-col items-center space-y-4">
+            <div className="w-14 h-14 rounded-full bg-[#D59B8D]/15 border border-[#D59B8D]/40 flex items-center justify-center animate-pulse">
+              <Heart className="w-6 h-6 text-[#D59B8D] fill-[#D59B8D]" />
+            </div>
+            <p className="text-[10px] tracking-[0.28em] uppercase text-[#D59B8D]">
+              11 : 11 · FOR MY FIANCÉE
+            </p>
+            <h2 className="font-editorial text-3xl text-[#EFE0DA] font-normal">
+              Happy <span className="italic text-[#D59B8D]">Valentine’s</span> Day
+            </h2>
+            <span className="mt-2 px-6 py-2.5 rounded-full bg-[#D59B8D] text-[#140204] text-[10px] font-semibold tracking-[0.18em] uppercase shadow-lg">
+              TAP ANYWHERE TO OPEN ♥
+            </span>
+          </div>
+        </div>
+      )}
+
+      {/* Persistent Audio Element (No autoPlay attribute so browser never advances currentTime silently before unlock) */}
       <audio
         ref={audioRef}
         src={AUDIO_SRC}
-        autoPlay
         loop
         playsInline
         preload="auto"
-        onPlay={() => setIsPlaying(true)}
+        onPlay={() => {
+          setIsPlaying(true);
+          setNeedsMobileTap(false);
+        }}
         onPause={() => setIsPlaying(false)}
         onEnded={(e) => {
           e.currentTarget.currentTime = 0;
           e.currentTarget.play().catch(() => {});
         }}
-      />
+      >
+        <source src={AUDIO_SRC} type="audio/mpeg" />
+        <source src={AUDIO_FALLBACK_SRC} type="audio/mpeg" />
+      </audio>
 
       <main className="flex-1">
         {/* SECTION 1: Obsidian-Crimson Editorial Hero Matching image.png & image_b9f591f3.png */}
@@ -288,7 +306,7 @@ export default function App() {
                 onClick={() => {
                   triggerPetalShower();
                   if (audioRef.current && audioRef.current.paused) {
-                    playAudioSafely();
+                    startSongFromBeginningOrResume(!hasStartedFromZeroRef.current);
                   }
                 }}
                 className="min-h-[42px] px-7 py-2.5 rounded-full bg-[#C89486] hover:bg-[#D59B8D] text-[#1D0306] text-[10px] sm:text-[11px] font-medium tracking-[0.16em] uppercase transition-transform active:scale-95 flex items-center gap-4 whitespace-nowrap shrink-0 shadow-xl"
@@ -364,7 +382,7 @@ export default function App() {
                 setRibbonUntied((prev) => !prev);
                 triggerPetalShower();
                 if (audioRef.current && audioRef.current.paused) {
-                  playAudioSafely();
+                  startSongFromBeginningOrResume(!hasStartedFromZeroRef.current);
                 }
               }}
               aria-label="Untie the 11/11 crimson satin Valentine ribbon"

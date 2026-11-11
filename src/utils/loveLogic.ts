@@ -28,8 +28,8 @@ export interface AnimatedRoseItem {
   vowText: string;
 }
 
-export const AUDIO_SRC = './assets/aistudio/valentine_song.mp3';
-export const AUDIO_FALLBACK_SRC = './assets/aistudio/WhatsApp_Audio_2026-11-11_at_12.25.10_AM_0fb249b7.mpeg';
+export const AUDIO_SRC = new URL('../assets/audio/valentine_song.mp3', import.meta.url).href;
+export const AUDIO_FALLBACK_SRC = './assets/aistudio/valentine_song.mp3';
 
 export const VISUAL_ASSETS = {
   FIANCEE_PHOTO: './assets/aistudio/WhatsApp_Image_2026-11-11_at_2.30.51_AM-Photoroom_b5aa24a6.png',
